@@ -1,4 +1,5 @@
 import os
+import time
 from typing import List, Optional
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -6,8 +7,9 @@ from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 
 
-NEO4J_CONNECTION_TIMEOUT_SECONDS = 6
-POSTGRES_CONNECTION_TIMEOUT_SECONDS = 3
+NEO4J_CONNECTION_TIMEOUT_SECONDS = 1.5
+NEO4J_RETRY_COOLDOWN_SECONDS = 60.0
+POSTGRES_CONNECTION_TIMEOUT_SECONDS = 2
 FALLBACK_SQLITE_FILENAME = "narrative_db.sqlite"
 DEFAULT_NEO4J_CANDIDATE_URIS = (
     settings.NEO4J_URI,
@@ -57,21 +59,28 @@ engine = _initialize_database_engine()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 neo4j_driver = None
+_last_neo4j_failure_timestamp: float = 0.0
 candidate_uris = _build_unique_neo4j_uris()
 
 
 def get_neo4j_driver():
-    global neo4j_driver
+    global neo4j_driver, _last_neo4j_failure_timestamp
     if neo4j_driver is not None:
         return neo4j_driver
+
+    now = time.monotonic()
+    if _last_neo4j_failure_timestamp > 0 and (now - _last_neo4j_failure_timestamp) < NEO4J_RETRY_COOLDOWN_SECONDS:
+        return None
 
     for candidate_uri in candidate_uris:
         connected_driver = _try_connect_neo4j_uri(candidate_uri)
         if connected_driver is not None:
             neo4j_driver = connected_driver
+            _last_neo4j_failure_timestamp = 0.0
             print(f"[NEO4J] Berhasil terhubung ke Neo4j Knowledge Graph di: {candidate_uri}")
             return neo4j_driver
 
+    _last_neo4j_failure_timestamp = now
     return None
 
 

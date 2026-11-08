@@ -156,7 +156,9 @@ export async function fetchSentimentTimelineFromApi(params?: {
     return [];
   }
 
-  return rawList.map(mapRawRowToTimelinePoint);
+  return mergeDuplicateDateTimelinePoints(
+    rawList.map((row: any) => mapRawRowToTimelinePoint(row))
+  );
 }
 
 export async function fetchEntitiesFromApi(params?: {
@@ -1079,16 +1081,19 @@ function mapRawRowToTimelinePoint(row: any): TimelinePoint {
   const isValidDate =
     parsedDate !== null && !isNaN(parsedDate.getTime()) && String(rawDate).includes('-');
 
-  const formattedDate = isValidDate
-    ? `${String(parsedDate.getDate()).padStart(2, '0')} ${parsedDate.toLocaleString('default', { month: 'short' })}`
-    : String(rawDate || '');
+  let formattedDate = String(rawDate || '');
+  if (isValidDate && parsedDate) {
+    const dayAndMonth = `${String(parsedDate.getDate()).padStart(2, '0')} ${parsedDate.toLocaleString('default', { month: 'short' })}`;
+    const pointYear = parsedDate.getFullYear();
+    formattedDate = `${dayAndMonth} ${pointYear}`;
+  }
 
   return {
     date: formattedDate,
     positive: Number(row.positive ?? row.positive_count ?? 0),
     neutral: Number(row.neutral ?? row.neutral_count ?? 0),
     negative: Number(row.negative ?? row.negative_count ?? 0),
-    timestamp: isValidDate ? parsedDate.getTime() : undefined,
+    timestamp: isValidDate && parsedDate ? parsedDate.getTime() : undefined,
     topPositiveTopic:
       row.topPositiveTopic ||
       row.top_positive_topic ||
@@ -1110,6 +1115,44 @@ function mapRawRowToTimelinePoint(row: any): TimelinePoint {
       row.dominant_topic ||
       undefined,
   };
+}
+
+function mergeDuplicateDateTimelinePoints(points: TimelinePoint[]): TimelinePoint[] {
+  const mergedByDate = new Map<string, TimelinePoint & { maxVolume: number }>();
+
+  for (const point of points) {
+    const key = point.date;
+    const pointVolume = (point.positive || 0) + (point.neutral || 0) + (point.negative || 0);
+    const existing = mergedByDate.get(key);
+
+    if (!existing) {
+      mergedByDate.set(key, { ...point, maxVolume: pointVolume });
+    } else {
+      const isNewerOrLarger = pointVolume >= existing.maxVolume;
+      mergedByDate.delete(key);
+      mergedByDate.set(key, {
+        date: key,
+        positive: existing.positive + (point.positive || 0),
+        neutral: existing.neutral + (point.neutral || 0),
+        negative: existing.negative + (point.negative || 0),
+        timestamp: Math.max(existing.timestamp || 0, point.timestamp || 0) || existing.timestamp,
+        topPositiveTopic: isNewerOrLarger
+          ? point.topPositiveTopic || existing.topPositiveTopic
+          : existing.topPositiveTopic || point.topPositiveTopic,
+        topNegativeTopic: isNewerOrLarger
+          ? point.topNegativeTopic || existing.topNegativeTopic
+          : existing.topNegativeTopic || point.topNegativeTopic,
+        topNeutralTopic: isNewerOrLarger
+          ? point.topNeutralTopic || existing.topNeutralTopic
+          : existing.topNeutralTopic || point.topNeutralTopic,
+        maxVolume: Math.max(existing.maxVolume, pointVolume),
+      });
+    }
+  }
+
+  return Array.from(mergedByDate.values())
+    .sort((first, second) => (first.timestamp || 0) - (second.timestamp || 0))
+    .map(({ maxVolume: _ignored, ...rest }) => rest);
 }
 
 function parseLiveGraphPayload(payload: any): { nodes: any[]; edges: any[] } {

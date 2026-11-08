@@ -363,4 +363,4 @@ function buildIconBadgeStyle(backgroundColor: string): React.CSSProperties {
   };
 }
 
-export default SummaryCards;
+export default React.memo(SummaryCards);

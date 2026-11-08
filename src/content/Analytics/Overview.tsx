@@ -51,7 +51,6 @@ function Overview({
   isRefreshing,
 }: DashboardProps) {
   const [activeTab, setActiveTab] = useState<'instagram' | 'x'>('instagram');
-  const [hoveredTrendData, setHoveredTrendData] = useState<any>(null);
 
   const [socialDataRaw, setSocialDataRaw] = useState<SocialPost[]>([]);
   const [overviewApiData, setOverviewApiData] = useState<DashboardOverviewData | null>(null);
@@ -76,10 +75,10 @@ function Overview({
         postsResult,
         combinedDistResult,
       ] = await Promise.allSettled([
-        fetchDashboardOverviewFromApi({ platform: activeTab, timeFilter, date: selectedDate }),
+        fetchDashboardOverviewFromApi({ platform: activeTab, timeFilter }),
         fetchSentimentTimelineFromApi({ platform: activeTab, timeFilter }),
-        fetchEntitiesFromApi({ platform: activeTab, timeFilter, date: selectedDate, limit: TOP_ITEMS_LIMIT }),
-        fetchTopicsFromApi({ platform: activeTab, timeFilter, date: selectedDate, limit: TOP_ITEMS_LIMIT }),
+        fetchEntitiesFromApi({ platform: activeTab, timeFilter, limit: TOP_ITEMS_LIMIT }),
+        fetchTopicsFromApi({ platform: activeTab, timeFilter, limit: TOP_ITEMS_LIMIT }),
         fetchPostsFromApi({ platform: activeTab, timeFilter, limit: POST_SAMPLE_LIMIT }),
         fetchCombinedPlatformDistributionFromApi({ timeFilter }),
       ]);
@@ -126,13 +125,14 @@ function Overview({
     } finally {
       setIsLoadingData(false);
     }
-  }, [timeFilter, activeTab, selectedDate]);
+  }, [timeFilter, activeTab]);
 
   useEffect(() => {
     loadPostsFromFastApi();
   }, [loadPostsFromFastApi, isRefreshing]);
 
   const handleTabChange = (selectedTab: 'instagram' | 'x') => {
+    setSelectedDate(null);
     setActiveTab(selectedTab);
     if (setPlatformFilter) {
       setPlatformFilter(selectedTab);
@@ -602,105 +602,14 @@ function Overview({
             </div>
           )}
 
-          <div style={{ height: 280, position: 'relative', width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-            {hoveredTrendData && (() => {
-              const daySentimentInfo = resolveDailySentimentTooltip(hoveredTrendData);
-              return (
-                <div style={{
-                  position: 'absolute',
-                  top: '10px',
-                  right: '18%',
-                  zIndex: 10,
-                  backgroundColor: daySentimentInfo.badgeBg,
-                  border: `1px solid ${daySentimentInfo.badgeBorder}`,
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  fontSize: '11px',
-                  fontWeight: '700',
-                  color: daySentimentInfo.textColor,
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-                  pointerEvents: 'none',
-                  transition: 'all 0.15s ease',
-                }}>
-                  {daySentimentInfo.label}: <br />
-                  <strong style={{ fontSize: '13px', display: 'inline-block', marginTop: '2px' }}>
-                    {daySentimentInfo.topic}
-                  </strong>
-                </div>
-              );
-            })()}
-
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={sentimentTrendData}
-                margin={{ top: 20, right: 20, left: -20, bottom: 0 }}
-                style={{ cursor: 'pointer' }}
-                onClick={(chartState: any) => {
-                  if (chartState && chartState.activeLabel) {
-                    setSelectedDate((previousDate) =>
-                      previousDate === chartState.activeLabel ? null : chartState.activeLabel
-                    );
-                  }
-                }}
-                onMouseMove={(chartState: any) => {
-                  if (chartState && chartState.activePayload && chartState.activePayload.length) {
-                    setHoveredTrendData(chartState.activePayload[0].payload);
-                  }
-                }}
-                onMouseLeave={() => setHoveredTrendData(null)}
-              >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="date" stroke={theme.textMuted} tickLine={false} style={{ fontSize: '12px' }} />
-                <YAxis stroke={theme.textMuted} tickLine={false} axisLine={false} style={{ fontSize: '12px' }} />
-                <Tooltip
-                  content={({ active, payload, label }: any) => {
-                    if (active && payload && payload.length) {
-                      const pointPayload = payload[0].payload;
-                      const daySentimentInfo = resolveDailySentimentTooltip(pointPayload);
-                      return (
-                        <div style={{
-                          backgroundColor: theme.bgCard,
-                          border: `1px solid ${theme.border}`,
-                          borderRadius: '12px',
-                          padding: '12px 14px',
-                          boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-                          textAlign: 'left',
-                        }}>
-                          <div style={{
-                            backgroundColor: daySentimentInfo.badgeBg,
-                            border: `1px solid ${daySentimentInfo.badgeBorder}`,
-                            padding: '6px 10px',
-                            borderRadius: '8px',
-                            marginBottom: '10px',
-                            fontSize: '11px',
-                            fontWeight: '700',
-                            color: daySentimentInfo.textColor,
-                          }}>
-                            <div>{daySentimentInfo.label}:</div>
-                            <div style={{ fontSize: '13px', fontWeight: '800', marginTop: '2px' }}>{daySentimentInfo.topic}</div>
-                          </div>
-                          <div style={{ fontSize: '12px', fontWeight: '800', color: theme.textMain, marginBottom: '6px' }}>{label}</div>
-                          {payload.map((entry: any, index: number) => (
-                            <div key={`item-${index}`} style={{ fontSize: '12px', color: entry.color, fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
-                              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: entry.color, display: 'inline-block' }}></span>
-                              <span>{entry.name}: <strong>{entry.value}</strong></span>
-                            </div>
-                          ))}
-                          <div style={{ fontSize: '11px', color: '#0284c7', marginTop: '8px', fontStyle: 'italic', fontWeight: '600' }}>
-                            💡 Klik untuk memfilter Knowledge Graph
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <Line type="monotone" dataKey="positive" name="Positive" stroke="#10b981" strokeWidth={3} dot={{ r: 5, fill: '#10b981' }} activeDot={{ r: 7 }} />
-                <Line type="monotone" dataKey="neutral" name="Neutral" stroke="#475569" strokeWidth={2} dot={{ r: 4, fill: '#475569' }} />
-                <Line type="monotone" dataKey="negative" name="Negative" stroke="#ef4444" strokeWidth={2} dot={{ r: 4, fill: '#ef4444' }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+          <SentimentTimelineChart
+            sentimentTrendData={sentimentTrendData}
+            theme={theme}
+            selectedDate={selectedDate}
+            peakDateStr={peakDateStr}
+            onToggleDate={setSelectedDate}
+            resolveDailySentimentTooltip={resolveDailySentimentTooltip}
+          />
 
           <div style={{ display: 'flex', gap: '24px', justifyContent: 'center', marginTop: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: '600', color: theme.textMain }}>
@@ -1184,7 +1093,7 @@ function matchesActivePlatformTab(platform: string | undefined, activeTab: 'inst
 }
 
 function formatDayShortKey(dateValue: Date): string {
-  return `${String(dateValue.getDate()).padStart(2, '0')} ${dateValue.toLocaleString('default', { month: 'short' })}`;
+  return `${String(dateValue.getDate()).padStart(2, '0')} ${dateValue.toLocaleString('default', { month: 'short' })} ${dateValue.getFullYear()}`;
 }
 
 function filterPostsByTimeWindow(posts: SocialPost[], timeFilter: string): SocialPost[] {
@@ -1214,6 +1123,16 @@ function filterPostsByTimeWindow(posts: SocialPost[], timeFilter: string): Socia
   );
 }
 
+function matchesSelectedDateLabel(postDate: Date, selectedDate: string): boolean {
+  const fullDayKey = formatDayShortKey(postDate);
+  if (selectedDate === fullDayKey) {
+    return true;
+  }
+  const dayAndMonthOnly = `${String(postDate.getDate()).padStart(2, '0')} ${postDate.toLocaleString('default', { month: 'short' })}`;
+  const shortDayWithYear = `${dayAndMonthOnly} '${String(postDate.getFullYear()).slice(-2)}`;
+  return selectedDate === dayAndMonthOnly || selectedDate === shortDayWithYear;
+}
+
 function filterPostsForSelectedDate(
   socialData: SocialPost[],
   selectedDate: string | null
@@ -1226,7 +1145,7 @@ function filterPostsForSelectedDate(
       return false;
     }
     const postDate = new Date(postItem.timestamp);
-    return formatDayShortKey(postDate) === selectedDate;
+    return matchesSelectedDateLabel(postDate, selectedDate);
   });
   return dateFilteredPosts.length > 0 ? dateFilteredPosts : socialData;
 }
@@ -1312,6 +1231,8 @@ function deriveOverviewAnalytics({
           timestamp: postDate.getTime(),
           topics: {},
         };
+      } else if (postDate.getTime() > dailyTrendMap[dayKey].timestamp) {
+        dailyTrendMap[dayKey].timestamp = postDate.getTime();
       }
 
       if (postItem.sentiment === 'positive') {
@@ -1608,7 +1529,7 @@ function computeDateSpecificPlatformDistribution({
       return;
     }
     const postDate = new Date(postItem.timestamp);
-    if (formatDayShortKey(postDate) !== selectedDate) {
+    if (!matchesSelectedDateLabel(postDate, selectedDate)) {
       return;
     }
     const normalizedPlatform = postItem.platform?.toLowerCase();
@@ -2135,4 +2056,204 @@ const insightNumberBadgeStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
-export default Overview;
+const MAX_CHART_POINTS = 90;
+const SHOW_STATIC_DOTS_THRESHOLD = 45;
+
+function downsampleTimelineData(
+  points: TimelinePoint[],
+  selectedDate: string | null,
+  peakDateStr: string
+): TimelinePoint[] {
+  if (points.length <= MAX_CHART_POINTS) {
+    return points;
+  }
+
+  const bucketSize = Math.ceil(points.length / MAX_CHART_POINTS);
+  const sampled: TimelinePoint[] = [];
+
+  for (let startIndex = 0; startIndex < points.length; startIndex += bucketSize) {
+    const bucket = points.slice(startIndex, startIndex + bucketSize);
+    const matchingSpecial = bucket.find(
+      (point) => point.date === selectedDate || point.date === peakDateStr
+    );
+    if (matchingSpecial) {
+      sampled.push(matchingSpecial);
+      continue;
+    }
+
+    let highestPoint = bucket[0];
+    let highestVolume = -1;
+    for (const point of bucket) {
+      const total = (point.positive || 0) + (point.neutral || 0) + (point.negative || 0);
+      if (total > highestVolume) {
+        highestVolume = total;
+        highestPoint = point;
+      }
+    }
+    sampled.push(highestPoint);
+  }
+
+  return sampled;
+}
+
+const SentimentTimelineChart = React.memo(function SentimentTimelineChart({
+  sentimentTrendData,
+  theme,
+  selectedDate,
+  peakDateStr,
+  onToggleDate,
+  resolveDailySentimentTooltip,
+}: {
+  sentimentTrendData: TimelinePoint[];
+  theme: any;
+  selectedDate: string | null;
+  peakDateStr: string;
+  onToggleDate: React.Dispatch<React.SetStateAction<string | null>>;
+  resolveDailySentimentTooltip: (dayData: any) => any;
+}) {
+  const [hoveredTrendData, setHoveredTrendData] = useState<any>(null);
+
+  const chartData = useMemo(
+    () => downsampleTimelineData(sentimentTrendData, selectedDate, peakDateStr),
+    [sentimentTrendData, selectedDate, peakDateStr]
+  );
+
+  const showStaticDots = chartData.length <= SHOW_STATIC_DOTS_THRESHOLD;
+
+  return (
+    <div style={{ height: 280, position: 'relative', width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+      {hoveredTrendData && (() => {
+        const daySentimentInfo = resolveDailySentimentTooltip(hoveredTrendData);
+        return (
+          <div style={{
+            position: 'absolute',
+            top: '10px',
+            right: '18%',
+            zIndex: 10,
+            backgroundColor: daySentimentInfo.badgeBg,
+            border: `1px solid ${daySentimentInfo.badgeBorder}`,
+            padding: '6px 12px',
+            borderRadius: '8px',
+            fontSize: '11px',
+            fontWeight: '700',
+            color: daySentimentInfo.textColor,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+            pointerEvents: 'none',
+            transition: 'all 0.15s ease',
+          }}>
+            {daySentimentInfo.label} ({hoveredTrendData.date}): <br />
+            <strong style={{ fontSize: '13px', display: 'inline-block', marginTop: '2px' }}>
+              {daySentimentInfo.topic}
+            </strong>
+          </div>
+        );
+      })()}
+
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart
+          data={chartData}
+          margin={{ top: 20, right: 20, left: -20, bottom: 0 }}
+          style={{ cursor: 'pointer' }}
+          onClick={(chartState: any) => {
+            if (chartState && chartState.activeLabel) {
+              onToggleDate((previousDate) =>
+                previousDate === chartState.activeLabel ? null : chartState.activeLabel
+              );
+            }
+          }}
+          onMouseMove={(chartState: any) => {
+            if (chartState && chartState.activePayload && chartState.activePayload.length) {
+              const nextPayload = chartState.activePayload[0].payload;
+              setHoveredTrendData((prev: any) =>
+                prev?.date === nextPayload?.date ? prev : nextPayload
+              );
+            }
+          }}
+          onMouseLeave={() => setHoveredTrendData(null)}
+        >
+          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+          <XAxis dataKey="date" stroke={theme.textMuted} tickLine={false} style={{ fontSize: '12px' }} minTickGap={24} />
+          <YAxis stroke={theme.textMuted} tickLine={false} axisLine={false} style={{ fontSize: '12px' }} />
+          <Tooltip
+            isAnimationActive={false}
+            content={({ active, payload, label }: any) => {
+              if (active && payload && payload.length) {
+                const pointPayload = payload[0].payload;
+                const daySentimentInfo = resolveDailySentimentTooltip(pointPayload);
+                return (
+                  <div style={{
+                    backgroundColor: theme.bgCard,
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '12px',
+                    padding: '12px 14px',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+                    textAlign: 'left',
+                  }}>
+                    <div style={{
+                      backgroundColor: daySentimentInfo.badgeBg,
+                      border: `1px solid ${daySentimentInfo.badgeBorder}`,
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      marginBottom: '10px',
+                      fontSize: '11px',
+                      fontWeight: '700',
+                      color: daySentimentInfo.textColor,
+                    }}>
+                      <div>{daySentimentInfo.label}:</div>
+                      <div style={{ fontSize: '13px', fontWeight: '800', marginTop: '2px' }}>{daySentimentInfo.topic}</div>
+                    </div>
+                    <div style={{ fontSize: '12px', fontWeight: '800', color: theme.textMain, marginBottom: '6px' }}>
+                      {pointPayload?.date || label}
+                    </div>
+                    {payload.map((entry: any, index: number) => (
+                      <div key={`item-${index}`} style={{ fontSize: '12px', color: entry.color, fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: entry.color, display: 'inline-block' }}></span>
+                        <span>{entry.name}: <strong>{entry.value}</strong></span>
+                      </div>
+                    ))}
+                    <div style={{ fontSize: '11px', color: '#0284c7', marginTop: '8px', fontStyle: 'italic', fontWeight: '600' }}>
+                      💡 Klik untuk memfilter Knowledge Graph
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            }}
+          />
+          <Line
+            type="monotone"
+            dataKey="positive"
+            name="Positive"
+            stroke="#10b981"
+            strokeWidth={3}
+            dot={showStaticDots ? { r: 5, fill: '#10b981' } : false}
+            activeDot={{ r: 7 }}
+            isAnimationActive={false}
+          />
+          <Line
+            type="monotone"
+            dataKey="neutral"
+            name="Neutral"
+            stroke="#475569"
+            strokeWidth={2}
+            dot={showStaticDots ? { r: 4, fill: '#475569' } : false}
+            activeDot={{ r: 6 }}
+            isAnimationActive={false}
+          />
+          <Line
+            type="monotone"
+            dataKey="negative"
+            name="Negative"
+            stroke="#ef4444"
+            strokeWidth={2}
+            dot={showStaticDots ? { r: 4, fill: '#ef4444' } : false}
+            activeDot={{ r: 6 }}
+            isAnimationActive={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+});
+
+export default React.memo(Overview);

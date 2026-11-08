@@ -3,7 +3,6 @@ import cytoscape from 'cytoscape';
 import {
   buildMbgFallbackGraph,
   fetchKnowledgeGraphFromApi,
-  fetchPostsFromApi,
   SocialPost,
 } from '../../services/api';
 
@@ -75,7 +74,6 @@ function KnowledgeGraph({
   isRefreshing,
   embedded = false,
   selectedTopic = null,
-  postsData,
 }: KnowledgeGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cytoscapeInstanceRef = useRef<any>(null);
@@ -86,16 +84,9 @@ function KnowledgeGraph({
   const [showEdgeLabels, setShowEdgeLabels] = useState(false);
   const [inspectedItem, setInspectedItem] = useState<any | null>(null);
 
-  const [socialDataRaw, setSocialDataRaw] = useState<SocialPost[]>(postsData || []);
   const [apiGraphElements, setApiGraphElements] = useState<CytoscapeGraphElements | null>(() =>
     buildMbgFallbackGraph()
   );
-
-  useEffect(() => {
-    if (Array.isArray(postsData)) {
-      setSocialDataRaw(postsData);
-    }
-  }, [postsData]);
 
   useEffect(() => {
     let isMounted = true;
@@ -116,22 +107,10 @@ function KnowledgeGraph({
         }
       });
 
-    if (!postsData) {
-      fetchPostsFromApi({ platform: platformFilter, timeFilter })
-        .then((fetchedPosts) => {
-          if (isMounted) {
-            setSocialDataRaw(fetchedPosts);
-          }
-        })
-        .catch(() => {
-          // Ignore background post fetch errors when rendering graph
-        });
-    }
-
     return () => {
       isMounted = false;
     };
-  }, [timeFilter, platformFilter, isRefreshing, postsData]);
+  }, [timeFilter, platformFilter, isRefreshing]);
 
   const { graphData, statsSummary } = useMemo(
     () =>
@@ -142,67 +121,112 @@ function KnowledgeGraph({
         selectedTopic,
         edgeTypeFilter,
       }),
-    [apiGraphElements, socialDataRaw, entityTypeFilter, edgeTypeFilter, minFrequencyFilter, selectedTopic]
+    [apiGraphElements, entityTypeFilter, edgeTypeFilter, minFrequencyFilter, selectedTopic]
   );
 
+  // 1. Initialize Cytoscape instance ONCE on mount and attach debounced ResizeObserver
   useEffect(() => {
+    if (!containerRef.current) {
+      return;
+    }
+
+    const cy = cytoscape({
+      container: containerRef.current,
+      elements: [],
+      style: buildCytoscapeStylesheet({ theme, isDark, embedded, showEdgeLabels }),
+      minZoom: 0.25,
+      maxZoom: 3,
+      wheelSensitivity: 0.25,
+      pixelRatio: 1,
+    });
+
+    cytoscapeInstanceRef.current = cy;
+
+    cy.on('tap', 'node', (event: any) => {
+      const tappedNode = event.target;
+      highlightNodeNeighborhood(cy, tappedNode);
+      setInspectedItem(extractTappedNodeInspection(tappedNode));
+    });
+
+    cy.on('tap', 'edge', (event: any) => {
+      const tappedEdge = event.target;
+      highlightEdgeEndpoints(cy, tappedEdge);
+      setInspectedItem(extractTappedEdgeInspection(tappedEdge));
+    });
+
+    cy.on('tap', (event: any) => {
+      if (event.target === cy) {
+        cy.elements().removeClass('highlighted dimmed');
+        setInspectedItem(null);
+      }
+    });
+
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     let resizeObserver: ResizeObserver | null = null;
 
-    if (containerRef.current) {
-      const cy = cytoscape({
-        container: containerRef.current,
-        elements: graphData,
-        style: buildCytoscapeStylesheet({ theme, isDark, embedded, showEdgeLabels }),
-        layout: {
-          name: 'cose',
-          padding: embedded ? 20 : 30,
-          nodeRepulsion: embedded ? 3200 : 4800,
-          idealEdgeLength: embedded ? 75 : 105,
-          animate: false,
-        } as any,
-      });
-
-      cytoscapeInstanceRef.current = cy;
-
-      cy.on('tap', 'node', (event: any) => {
-        const tappedNode = event.target;
-        highlightNodeNeighborhood(cy, tappedNode);
-        setInspectedItem(extractTappedNodeInspection(tappedNode));
-      });
-
-      cy.on('tap', 'edge', (event: any) => {
-        const tappedEdge = event.target;
-        highlightEdgeEndpoints(cy, tappedEdge);
-        setInspectedItem(extractTappedEdgeInspection(tappedEdge));
-      });
-
-      cy.on('tap', (event: any) => {
-        if (event.target === cy) {
-          cy.elements().removeClass('highlighted dimmed');
-          setInspectedItem(null);
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => {
+        if (resizeTimer) {
+          clearTimeout(resizeTimer);
         }
-      });
-
-      if (typeof ResizeObserver !== 'undefined') {
-        resizeObserver = new ResizeObserver(() => {
+        resizeTimer = setTimeout(() => {
           if (cytoscapeInstanceRef.current) {
             cytoscapeInstanceRef.current.resize();
-            cytoscapeInstanceRef.current.fit(20);
+            cytoscapeInstanceRef.current.fit(undefined, 20);
           }
-        });
-        resizeObserver.observe(containerRef.current);
-      }
+        }, 150);
+      });
+      resizeObserver.observe(containerRef.current);
     }
 
     return () => {
+      if (resizeTimer) {
+        clearTimeout(resizeTimer);
+      }
       if (resizeObserver) {
         resizeObserver.disconnect();
       }
       if (cytoscapeInstanceRef.current) {
         cytoscapeInstanceRef.current.destroy();
+        cytoscapeInstanceRef.current = null;
       }
     };
-  }, [graphData, theme, isDark, embedded, showEdgeLabels]);
+  }, []);
+
+  // 2. Update graph elements and run fast layout ONLY when filtered graphData changes
+  useEffect(() => {
+    const cy = cytoscapeInstanceRef.current;
+    if (!cy) {
+      return;
+    }
+
+    setInspectedItem(null);
+    cy.batch(() => {
+      cy.elements().remove();
+      cy.add(graphData);
+    });
+
+    const layoutInstance = cy.layout({
+      name: 'cose',
+      padding: embedded ? 20 : 30,
+      nodeRepulsion: embedded ? 3200 : 4800,
+      idealEdgeLength: embedded ? 75 : 105,
+      numIter: 250,
+      animate: false,
+      randomize: false,
+    } as any);
+
+    layoutInstance.run();
+  }, [graphData, embedded]);
+
+  // 3. Update stylesheet ONLY when theme or edge-label toggle changes (no layout recalculation)
+  useEffect(() => {
+    const cy = cytoscapeInstanceRef.current;
+    if (!cy) {
+      return;
+    }
+    cy.style(buildCytoscapeStylesheet({ theme, isDark, embedded, showEdgeLabels })).update();
+  }, [theme, isDark, embedded, showEdgeLabels]);
 
   const cardStyle: React.CSSProperties = {
     backgroundColor: theme.bgCard,
@@ -980,4 +1004,4 @@ function extractTappedEdgeInspection(tappedEdge: any) {
   };
 }
 
-export default KnowledgeGraph;
+export default React.memo(KnowledgeGraph);
