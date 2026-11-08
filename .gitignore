@@ -1,0 +1,68 @@
+# ==========================================
+# ENVIRONMENT & CREDENTIALS
+# ==========================================
+.env
+.env.*
+!.env.example
+*.env
+*.pem
+*.key
+*.cert
+*.crt
+
+# ==========================================
+# PYTHON VIRTUAL ENV & CACHE
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ==========================================
+# NODE.JS / FRONTEND ARTIFACTS
+# ==========================================
+node_modules/
+dist/
+dist-ssr/
+build/
+.next/
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.local
+
+# ==========================================
+# DATABASE & ARCHIVES
+# ==========================================
+*.sqlite
+*.sqlite3
+*.db
+*.pdf
+*.zip
+*.rar
+*.7z
+
+# ==========================================
+# EDITOR & OS SYSTEM FILES
+# ==========================================
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
