@@ -7,6 +7,7 @@ from app.core.config import settings
 
 
 NEO4J_CONNECTION_TIMEOUT_SECONDS = 6
+POSTGRES_CONNECTION_TIMEOUT_SECONDS = 3
 FALLBACK_SQLITE_FILENAME = "narrative_db.sqlite"
 DEFAULT_NEO4J_CANDIDATE_URIS = (
     settings.NEO4J_URI,
@@ -21,9 +22,14 @@ def _initialize_database_engine() -> Engine:
         return create_engine(database_url, connect_args={"check_same_thread": False})
 
     try:
-        postgres_engine = create_engine(database_url, pool_pre_ping=True)
+        postgres_engine = create_engine(
+            database_url,
+            pool_pre_ping=True,
+            connect_args={"connect_timeout": POSTGRES_CONNECTION_TIMEOUT_SECONDS},
+        )
         with postgres_engine.connect():
             pass
+        print(f"[DATABASE] Berhasil terhubung ke PostgreSQL utama: {database_url}")
         return postgres_engine
     except Exception:
         return _create_local_sqlite_fallback_engine()
@@ -33,7 +39,7 @@ def _create_local_sqlite_fallback_engine() -> Engine:
     backend_root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     sqlite_file_path = os.path.join(backend_root_dir, FALLBACK_SQLITE_FILENAME)
     sqlite_url = f"sqlite:///{sqlite_file_path}"
-    print(f"[DATABASE] Menggunakan SQLite lokal: {sqlite_file_path}")
+    print(f"[DATABASE] PostgreSQL utama tidak terjangkau, menggunakan fallback SQLite lokal: {sqlite_file_path}")
     return create_engine(sqlite_url, connect_args={"check_same_thread": False})
 
 
