@@ -532,6 +532,39 @@ export function buildTimeAndPlatformQuery(params?: {
   return serializedQuery ? `?${serializedQuery}` : '';
 }
 
+export const KNOWN_TOPIC_NAMES: Record<number, string> = {
+  7: 'Program Makan Bergizi Sekolah',
+  8: 'Program Makan Bergizi Gratis',
+  9: 'Pemanfaatan susu segar nasional',
+  10: 'Program Makan Bergizi Gratis di Kendari',
+  11: 'Program Makan Bergizi Gratis (MBG)',
+  12: 'Program Makan Bergizi Gratis Indonesia',
+  13: 'Evaluasi Program Makan Bergizi Gratis',
+  14: 'Kontroversi Program Makan Bergizi Gratis MBG',
+  15: 'Lainnya / Tidak terklasifikasi',
+  16: 'Pengawalan Polri/TNI program makan bergizi',
+  17: 'Anggaran Program Makan Bergizi Gratis',
+  18: 'Susu ikan sebagai pengganti susu sapi',
+};
+
+export function resolveTopicName(rawTopic: any, topicId?: number | string): string {
+  const nameStr = String(
+    (typeof rawTopic === 'object' && rawTopic !== null ? rawTopic.name : rawTopic) || ''
+  ).trim();
+
+  if (nameStr && !nameStr.toLowerCase().startsWith('topik #')) {
+    return nameStr;
+  }
+
+  const idMatch = nameStr.match(/Topik #(\d+)/i);
+  const resolvedId = Number(topicId || (idMatch ? idMatch[1] : 0));
+  if (resolvedId && KNOWN_TOPIC_NAMES[resolvedId]) {
+    return KNOWN_TOPIC_NAMES[resolvedId];
+  }
+
+  return nameStr || (topicId ? `Topik #${topicId}` : '');
+}
+
 export function normalizePostRecord(row: any): SocialPost {
   const rawEntities = Array.isArray(row.entities) ? row.entities : [];
   const normalizedEntities = rawEntities
@@ -577,11 +610,11 @@ export function normalizePostRecord(row: any): SocialPost {
     ),
   };
 
-  const topicName =
+  const rawTopicValue =
     (typeof row.topic === 'object' && row.topic !== null ? row.topic.name : row.topic) ||
     row.topic_name ||
-    row.topic_label ||
-    (row.topic_id ? `Topik #${row.topic_id}` : '');
+    row.topic_label;
+  const topicName = resolveTopicName(rawTopicValue, row.topic_id);
 
   const rawSentiment = String(row.sentiment || 'neutral').toLowerCase();
   let sentiment: 'positive' | 'negative' | 'neutral' = 'neutral';
@@ -634,7 +667,10 @@ export function normalizeTopicRecord(row: any, index: number): TopicItem {
   return {
     id: row.id ?? row.topic_id ?? index + 1,
     rank: Number(row.rank ?? index + 1),
-    title: String(row.name ?? row.title ?? row.topic ?? row.label ?? `Topik #${index + 1}`),
+    title: resolveTopicName(
+      row.name ?? row.title ?? row.topic ?? row.label,
+      row.id ?? row.topic_id ?? index + 1
+    ),
     postCount,
     posts:
       typeof row.posts === 'string'

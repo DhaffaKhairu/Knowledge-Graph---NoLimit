@@ -113,13 +113,33 @@ def get_sentiment_timeline(
     return _assemble_timeline_response(daily_sentiment_rows, daily_dominant_topics)
 
 
+_KNOWN_TOPIC_NAMES = {
+    7: "Program Makan Bergizi Sekolah",
+    8: "Program Makan Bergizi Gratis",
+    9: "Pemanfaatan susu segar nasional",
+    10: "Program Makan Bergizi Gratis di Kendari",
+    11: "Program Makan Bergizi Gratis (MBG)",
+    12: "Program Makan Bergizi Gratis Indonesia",
+    13: "Evaluasi Program Makan Bergizi Gratis",
+    14: "Kontroversi Program Makan Bergizi Gratis MBG",
+    15: "Lainnya / Tidak terklasifikasi",
+    16: "Pengawalan Polri/TNI program makan bergizi",
+    17: "Anggaran Program Makan Bergizi Gratis",
+    18: "Susu ikan sebagai pengganti susu sapi",
+}
+
+
 def serialize_post(post_item: Post) -> Dict[str, Any]:
     normalized_platform = _normalize_post_platform(post_item.platform)
     related_topic = getattr(post_item, "topic", None)
     topic_label = (
         related_topic.name
-        if related_topic
-        else (f"Topik #{post_item.topic_id}" if post_item.topic_id else "")
+        if (related_topic and hasattr(related_topic, "name"))
+        else (
+            _KNOWN_TOPIC_NAMES.get(post_item.topic_id)
+            if post_item.topic_id in _KNOWN_TOPIC_NAMES
+            else (f"Topik #{post_item.topic_id}" if post_item.topic_id else "")
+        )
     )
 
     return {

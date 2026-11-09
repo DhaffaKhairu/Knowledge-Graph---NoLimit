@@ -2,7 +2,7 @@ import uuid
 import json
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, MetaData, Float, Boolean, TypeDecorator
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import declarative_base, relationship
 from datetime import datetime
 
 metadata = MetaData()
@@ -107,4 +107,5 @@ class Post(Base):
     sentiment = Column(String(20), nullable=True, index=True) # 'positive', 'negative', 'neutral'
     sentiment_score = Column(Float, nullable=True)
     topic_id = Column(Integer, ForeignKey('topics.id'), nullable=True, index=True)
+    topic = relationship('Topic', backref='posts', lazy='joined')
     created_at = Column(DateTime, default=datetime.utcnow)

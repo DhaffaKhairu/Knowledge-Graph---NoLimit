@@ -21,6 +21,7 @@ import {
   fetchTopicsFromApi,
   normalizeEntityType,
   PlatformDistribution,
+  resolveTopicName,
   SocialPost,
   TimelinePoint,
   TopicItem,
@@ -282,8 +283,9 @@ function Overview({
         activeSocialData,
         topTopicsData,
         selectedDateTopic,
+        selectedDatePayload,
       }),
-    [selectedDate, activeSocialData, topTopicsData, selectedDateTopic]
+    [selectedDate, activeSocialData, topTopicsData, selectedDateTopic, selectedDatePayload]
   );
 
   const activeTopEntitiesData = useMemo(
@@ -1247,20 +1249,24 @@ function deriveOverviewAnalytics({
   > = {};
 
   socialData.forEach((postItem) => {
+    const resolvedTopic = postItem.topic
+      ? resolveTopicName(postItem.topic, postItem.topic_id)
+      : '';
+
     if (postItem.sentiment === 'positive') {
       localPositiveCount++;
-      if (postItem.topic) {
-        positiveTopicCounts[postItem.topic] = (positiveTopicCounts[postItem.topic] || 0) + 1;
+      if (resolvedTopic) {
+        positiveTopicCounts[resolvedTopic] = (positiveTopicCounts[resolvedTopic] || 0) + 1;
       }
     } else if (postItem.sentiment === 'negative') {
       localNegativeCount++;
-      if (postItem.topic) {
-        negativeTopicCounts[postItem.topic] = (negativeTopicCounts[postItem.topic] || 0) + 1;
+      if (resolvedTopic) {
+        negativeTopicCounts[resolvedTopic] = (negativeTopicCounts[resolvedTopic] || 0) + 1;
       }
     } else {
       localNeutralCount++;
-      if (postItem.topic) {
-        neutralTopicCounts[postItem.topic] = (neutralTopicCounts[postItem.topic] || 0) + 1;
+      if (resolvedTopic) {
+        neutralTopicCounts[resolvedTopic] = (neutralTopicCounts[resolvedTopic] || 0) + 1;
       }
     }
 
@@ -1272,8 +1278,8 @@ function deriveOverviewAnalytics({
         (postItem.engagement.views || 0);
     }
 
-    if (postItem.topic) {
-      topicCounts[postItem.topic] = (topicCounts[postItem.topic] || 0) + 1;
+    if (resolvedTopic) {
+      topicCounts[resolvedTopic] = (topicCounts[resolvedTopic] || 0) + 1;
     }
 
     if (postItem.timestamp) {
@@ -1631,39 +1637,87 @@ function computeDateSpecificTopTopics({
   activeSocialData,
   topTopicsData,
   selectedDateTopic,
+  selectedDatePayload,
 }: {
   selectedDate: string | null;
   activeSocialData: SocialPost[];
   topTopicsData: TopicItem[];
   selectedDateTopic: string | null;
+  selectedDatePayload: TimelinePoint | null;
 }): TopicItem[] {
-  if (!selectedDate || activeSocialData.length === 0) {
+  if (!selectedDate) {
     return topTopicsData;
   }
 
   const topicCounts: Record<string, number> = {};
   activeSocialData.forEach((postItem) => {
     if (postItem.topic) {
-      topicCounts[postItem.topic] = (topicCounts[postItem.topic] || 0) + 1;
+      const resolvedTitle = resolveTopicName(postItem.topic, postItem.topic_id);
+      topicCounts[resolvedTitle] = (topicCounts[resolvedTitle] || 0) + 1;
     }
   });
 
-  const sortedTopics = Object.entries(topicCounts).sort((first, second) => second[1] - first[1]);
-  if (sortedTopics.length === 0) {
+  const dayTotal =
+    (selectedDatePayload
+      ? (selectedDatePayload.positive || 0) +
+        (selectedDatePayload.neutral || 0) +
+        (selectedDatePayload.negative || 0)
+      : 0) ||
+    activeSocialData.length ||
+    1;
+
+  // Pastikan topik dominan harian (selectedDateTopic) selalu menjadi #1 Peak Topic
+  if (selectedDateTopic) {
+    const dominantCount = selectedDatePayload
+      ? Math.max(
+          selectedDatePayload.neutral || 0,
+          selectedDatePayload.positive || 0,
+          selectedDatePayload.negative || 0,
+          1
+        )
+      : Math.max(topicCounts[selectedDateTopic] || 0, 1);
+
+    const otherMax = Math.max(
+      0,
+      ...Object.entries(topicCounts)
+        .filter(([t]) => t !== selectedDateTopic)
+        .map(([, c]) => c)
+    );
+    topicCounts[selectedDateTopic] = Math.max(dominantCount, otherMax + 1);
+  }
+
+  if (Object.keys(topicCounts).length === 0) {
     return topTopicsData;
   }
 
-  const dayTotal = activeSocialData.length || 1;
-  return sortedTopics.slice(0, TOP_ITEMS_LIMIT).map(([title, postCount], index) => ({
-    rank: index + 1,
-    title,
-    postCount,
-    posts: `${postCount.toLocaleString('id-ID')} postingan (${selectedDate})`,
-    growth:
-      title === selectedDateTopic
-        ? '★ Peak Topic'
-        : `${((postCount / dayTotal) * PERCENTAGE_MULTIPLIER).toFixed(1)}% share`,
-  }));
+  const sortedTopics = Object.entries(topicCounts).sort(
+    (first, second) => second[1] - first[1]
+  );
+
+  // Pastikan topik dominan selalu berada di posisi pertama
+  if (selectedDateTopic) {
+    const peakIndex = sortedTopics.findIndex(([title]) => title === selectedDateTopic);
+    if (peakIndex > 0) {
+      const [peakItem] = sortedTopics.splice(peakIndex, 1);
+      sortedTopics.unshift(peakItem);
+    }
+  }
+
+  return sortedTopics.slice(0, TOP_ITEMS_LIMIT).map(([title, postCount], index) => {
+    const isPeak = title === selectedDateTopic || index === 0;
+    const shareVal = Math.min(
+      100,
+      Math.max(1, Math.round((postCount / dayTotal) * PERCENTAGE_MULTIPLIER))
+    );
+    return {
+      id: index + 1,
+      rank: index + 1,
+      title,
+      postCount,
+      posts: `${postCount.toLocaleString('id-ID')} postingan (${selectedDate})`,
+      growth: isPeak ? '★ Peak Topic' : `↗ ${shareVal}% share`,
+    };
+  });
 }
 
 function computeDateSpecificTopEntities({
