@@ -31,16 +31,16 @@ export const ENTITY_CATEGORIES = [
   { id: 'topic', label: 'Topic (Topik Utama)' },
 ];
 
-const ENTITY_LEGEND_ITEMS = [
-  { key: 'topic', label: 'Topic (9)' },
-  { key: 'person', label: 'Person (19)' },
-  { key: 'organization', label: 'Organization (12)' },
-  { key: 'geopolitical', label: 'Geopolitical (26)' },
-  { key: 'location', label: 'Location (5)' },
-  { key: 'product', label: 'Product (23)' },
-  { key: 'event', label: 'Event (10)' },
-  { key: 'norm', label: 'Norm (33)' },
-  { key: 'facility', label: 'Facility (0)' },
+export const ENTITY_LEGEND_CONFIG = [
+  { key: 'topic', name: 'Topic' },
+  { key: 'person', name: 'Person' },
+  { key: 'organization', name: 'Organization' },
+  { key: 'geopolitical', name: 'Geopolitical' },
+  { key: 'location', name: 'Location' },
+  { key: 'product', name: 'Product' },
+  { key: 'event', name: 'Event' },
+  { key: 'norm', name: 'Norm' },
+  { key: 'facility', name: 'Facility' },
 ];
 
 export interface KnowledgeGraphProps {
@@ -123,6 +123,15 @@ function KnowledgeGraph({
       }),
     [apiGraphElements, entityTypeFilter, edgeTypeFilter, minFrequencyFilter, selectedTopic]
   );
+
+  const nodeCountByType = useMemo(() => {
+    const counts: Record<string, number> = {};
+    (graphData?.nodes || []).forEach((nodeElement: any) => {
+      const normalizedType = String(nodeElement.data?.type || '').toLowerCase();
+      counts[normalizedType] = (counts[normalizedType] || 0) + 1;
+    });
+    return counts;
+  }, [graphData]);
 
   // 1. Initialize Cytoscape instance ONCE on mount and attach debounced ResizeObserver
   useEffect(() => {
@@ -416,22 +425,25 @@ function KnowledgeGraph({
       </div>
 
       <div style={{ display: 'flex', gap: '12px', marginTop: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
-        {ENTITY_LEGEND_ITEMS.map((legendItem) => (
-          <div
-            key={legendItem.key}
-            style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: '600', color: theme.textMuted }}
-          >
-            <span
-              style={{
-                width: '9px',
-                height: '9px',
-                borderRadius: '50%',
-                backgroundColor: ENTITY_COLORS[legendItem.key],
-              }}
-            />
-            {legendItem.label}
-          </div>
-        ))}
+        {ENTITY_LEGEND_CONFIG.map((legendItem) => {
+          const currentCount = nodeCountByType[legendItem.key] ?? 0;
+          return (
+            <div
+              key={legendItem.key}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: '600', color: theme.textMuted }}
+            >
+              <span
+                style={{
+                  width: '9px',
+                  height: '9px',
+                  borderRadius: '50%',
+                  backgroundColor: ENTITY_COLORS[legendItem.key],
+                }}
+              />
+              {legendItem.name} ({currentCount})
+            </div>
+          );
+        })}
       </div>
     </article>
   );
