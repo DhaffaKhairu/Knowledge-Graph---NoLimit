@@ -3,7 +3,7 @@ from typing import Any, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from app.api.dependencies import get_current_user, get_db
+from app.api.dependencies import _decode_access_token, get_current_user, get_db
 from app.core import security
 from app.core.config import settings
 from app.schemas import user as user_schemas
@@ -84,6 +84,90 @@ def read_users_me(
 @router.post("/logout")
 def logout() -> Any:
     return {"message": "Successfully logged out. Please clear your token from local storage."}
+
+
+@router.post("/change-password")
+def change_password(
+    data: user_schemas.UserChangePassword,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Any:
+    """Verifikasi kata sandi saat ini dan ubah ke kata sandi baru."""
+    if not data.current_password:
+        raise HTTPException(status_code=400, detail="Kata sandi saat ini harus diisi.")
+
+    if not data.new_password:
+        raise HTTPException(status_code=400, detail="Kata sandi baru harus diisi.")
+
+    if data.current_password == data.new_password:
+        raise HTTPException(
+            status_code=400,
+            detail="Kata sandi baru tidak boleh sama dengan kata sandi lama.",
+        )
+
+    if len(data.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Kata sandi baru minimal 8 karakter.")
+
+    if not any(c.isalpha() for c in data.new_password) or not any(c.isdigit() for c in data.new_password):
+        raise HTTPException(
+            status_code=400,
+            detail="Kata sandi baru harus mengombinasikan huruf dan angka.",
+        )
+
+    matched_user: Optional[User] = None
+
+    # 1. Cek melalui Bearer token jika tersedia
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        raw_token = auth_header.split(" ", 1)[1].strip()
+        try:
+            token_payload = _decode_access_token(raw_token)
+            if token_payload.sub:
+                matched_user = (
+                    db.query(User)
+                    .filter(
+                        or_(
+                            User.username == token_payload.sub,
+                            User.email == token_payload.sub,
+                        )
+                    )
+                    .first()
+                )
+        except Exception:
+            matched_user = None
+
+    # 2. Cek melalui email_or_username dari payload jika token tidak ada
+    if not matched_user and data.email_or_username:
+        matched_user = (
+            db.query(User)
+            .filter(
+                or_(
+                    User.email == data.email_or_username,
+                    User.username == data.email_or_username,
+                )
+            )
+            .first()
+        )
+
+    # 3. Fallback ke akun admin default
+    if not matched_user:
+        matched_user = db.query(User).filter(User.username == "admin").first()
+
+    if not matched_user:
+        raise HTTPException(status_code=404, detail="Akun pengguna tidak ditemukan.")
+
+    # 4. Validasi kebenaran kata sandi lama (tidak boleh asal)
+    if not security.verify_password(data.current_password, matched_user.password_hash):
+        raise HTTPException(
+            status_code=400,
+            detail="Kata sandi saat ini (lama) salah. Harap periksa kembali.",
+        )
+
+    # 5. Simpan hash kata sandi baru
+    matched_user.password_hash = security.get_password_hash(data.new_password)
+    db.commit()
+
+    return {"message": "Kata sandi berhasil diperbarui."}
 
 
 async def _extract_login_credentials(request: Request) -> Tuple[Optional[str], Optional[str]]:

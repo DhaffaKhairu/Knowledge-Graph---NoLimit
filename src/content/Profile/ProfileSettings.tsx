@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import nolimitLogo from '../../assets/nolimit-logo.png';
+import { changePasswordWithFastApi } from '../../services/api';
 
 interface UserProfile {
   name: string;
@@ -43,6 +44,7 @@ export default function ProfileSettings({ currentUser, onUpdateUser, onLogoutCli
   const [confirmNewPass, setConfirmNewPass] = useState('');
   const [passErrorMsg, setPassErrorMsg] = useState('');
   const [passSuccessMsg, setPassSuccessMsg] = useState('');
+  const [isSubmittingPass, setIsSubmittingPass] = useState(false);
 
   const [emailNotif, setEmailNotif] = useState(true);
   const [pushNotif, setPushNotif] = useState(true);
@@ -134,7 +136,7 @@ export default function ProfileSettings({ currentUser, onUpdateUser, onLogoutCli
     }
   };
 
-  const handleChangePasswordSubmit = (event: React.FormEvent) => {
+  const handleChangePasswordSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setPassErrorMsg('');
     setPassSuccessMsg('');
@@ -145,14 +147,27 @@ export default function ProfileSettings({ currentUser, onUpdateUser, onLogoutCli
       return;
     }
 
-    setPassSuccessMsg('✓ Kata sandi berhasil diperbarui!');
-    setTimeout(() => {
-      setCurrentPass('');
-      setNewPass('');
-      setConfirmNewPass('');
-      setActiveModal(null);
-      showToast('✓ Kata sandi Anda telah berhasil diubah!');
-    }, PASSWORD_UPDATE_CLOSE_DELAY_MS);
+    setIsSubmittingPass(true);
+    try {
+      await changePasswordWithFastApi({
+        currentPassword: currentPass,
+        newPassword: newPass,
+        emailOrUsername: currentUser.email || currentUser.name,
+      });
+
+      setPassSuccessMsg('✓ Kata sandi berhasil diperbarui!');
+      setTimeout(() => {
+        setCurrentPass('');
+        setNewPass('');
+        setConfirmNewPass('');
+        setActiveModal(null);
+        showToast('✓ Kata sandi Anda telah berhasil diubah!');
+      }, PASSWORD_UPDATE_CLOSE_DELAY_MS);
+    } catch (error: any) {
+      setPassErrorMsg(error?.message || 'Gagal mengubah kata sandi.');
+    } finally {
+      setIsSubmittingPass(false);
+    }
   };
 
   const handleSaveNotifications = (event: React.FormEvent) => {
@@ -1276,18 +1291,19 @@ export default function ProfileSettings({ currentUser, onUpdateUser, onLogoutCli
                   </button>
                   <button
                     type="submit"
+                    disabled={isSubmittingPass}
                     style={{
                       flex: 1,
                       padding: '12px',
-                      backgroundColor: '#003399',
+                      backgroundColor: isSubmittingPass ? '#94a3b8' : '#003399',
                       color: '#ffffff',
                       border: 'none',
                       borderRadius: '8px',
                       fontWeight: '800',
-                      cursor: 'pointer',
+                      cursor: isSubmittingPass ? 'not-allowed' : 'pointer',
                     }}
                   >
-                    Simpan Password
+                    {isSubmittingPass ? 'Memverifikasi...' : 'Simpan Password'}
                   </button>
                 </div>
               </form>
@@ -1540,6 +1556,9 @@ function validatePasswordChangeInput(
   }
   if (!newPassword) {
     return 'Harap masukkan kata sandi baru Anda.';
+  }
+  if (currentPassword === newPassword) {
+    return 'Kata sandi baru tidak boleh sama dengan kata sandi lama.';
   }
   if (newPassword.length < MIN_PASSWORD_LENGTH) {
     return 'Kata sandi baru minimal 8 karakter.';

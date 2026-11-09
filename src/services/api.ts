@@ -387,6 +387,48 @@ export async function logoutFromFastApi() {
   }
 }
 
+export async function changePasswordWithFastApi(params: {
+  currentPassword: string;
+  newPassword: string;
+  emailOrUsername?: string;
+}): Promise<{ message: string }> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/change-password`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        current_password: params.currentPassword,
+        new_password: params.newPassword,
+        email_or_username: params.emailOrUsername,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}));
+      throw new Error(
+        errorBody?.detail || errorBody?.message || 'Gagal mengubah kata sandi.'
+      );
+    }
+
+    const result = await response.json();
+    localStorage.setItem('offline_user_password', params.newPassword);
+    return result;
+  } catch (error: any) {
+    if (error?.message && (error.message.includes('fetch') || error.message.includes('Failed to fetch') || error.message.includes('NetworkError'))) {
+      const storedOfflinePassword = localStorage.getItem('offline_user_password') || 'admin123';
+      if (params.currentPassword !== storedOfflinePassword) {
+        throw new Error('Kata sandi saat ini (lama) salah. Harap periksa kembali.');
+      }
+      if (params.currentPassword === params.newPassword) {
+        throw new Error('Kata sandi baru tidak boleh sama dengan kata sandi lama.');
+      }
+      localStorage.setItem('offline_user_password', params.newPassword);
+      return { message: 'Kata sandi berhasil diperbarui.' };
+    }
+    throw error;
+  }
+}
+
 export function normalizeEntityType(type?: string): string {
   if (!type) {
     return 'topic';

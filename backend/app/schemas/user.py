@@ -40,3 +40,9 @@ class LoginRequest(BaseModel):
     email: Optional[str] = None
     username: Optional[str] = None
     password: str
+
+
+class UserChangePassword(BaseModel):
+    current_password: str
+    new_password: str
+    email_or_username: Optional[str] = None
