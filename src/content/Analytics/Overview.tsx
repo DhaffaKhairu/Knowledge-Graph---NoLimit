@@ -207,7 +207,27 @@ function Overview({
     return sentimentTrendData.find((point: any) => point.date === selectedDate) || null;
   }, [selectedDate, sentimentTrendData]);
 
-  const selectedDateTopic = selectedDatePayload?.topPositiveTopic || null;
+  const selectedDateTopic = useMemo(() => {
+    if (!selectedDatePayload) {
+      return null;
+    }
+    const positiveCount = Number(selectedDatePayload.positive || 0);
+    const neutralCount = Number(selectedDatePayload.neutral || 0);
+    const negativeCount = Number(selectedDatePayload.negative || 0);
+
+    if (positiveCount > neutralCount && positiveCount >= negativeCount) {
+      return selectedDatePayload.topPositiveTopic || topPositiveTopic;
+    }
+    if (negativeCount > neutralCount && negativeCount > positiveCount) {
+      return selectedDatePayload.topNegativeTopic || topNegativeTopic;
+    }
+    return (
+      selectedDatePayload.topNeutralTopic ||
+      selectedDatePayload.topPositiveTopic ||
+      topNeutralTopic ||
+      topPositiveTopic
+    );
+  }, [selectedDatePayload, topPositiveTopic, topNegativeTopic, topNeutralTopic]);
 
   const activeSocialData = useMemo(
     () => filterPostsForSelectedDate(socialData, selectedDate),
@@ -224,6 +244,36 @@ function Overview({
       }),
     [selectedDate, timeFilteredRaw, platformDistData, sentimentTrendData]
   );
+
+  const activePeriodPostsCount = useMemo(() => {
+    if (selectedDate && selectedDatePayload) {
+      const pointTotal =
+        (selectedDatePayload.positive || 0) +
+        (selectedDatePayload.neutral || 0) +
+        (selectedDatePayload.negative || 0);
+      if (pointTotal > 0) {
+        return pointTotal;
+      }
+    }
+    return (
+      activePlatformDistData.instagram.posts + activePlatformDistData.x.posts ||
+      totalPosts
+    );
+  }, [selectedDate, selectedDatePayload, activePlatformDistData, totalPosts]);
+
+  const activePeriodNegativeCount = useMemo(() => {
+    if (selectedDate && selectedDatePayload) {
+      return Number(selectedDatePayload.negative || 0);
+    }
+    return negativeCount;
+  }, [selectedDate, selectedDatePayload, negativeCount]);
+
+  const activeNegativeTopic = useMemo(() => {
+    if (selectedDate && selectedDatePayload?.topNegativeTopic) {
+      return selectedDatePayload.topNegativeTopic;
+    }
+    return topNegativeTopic || DEFAULT_FALLBACK_TOPIC;
+  }, [selectedDate, selectedDatePayload, topNegativeTopic]);
 
   const activeTopTopicsData = useMemo(
     () =>
@@ -655,12 +705,14 @@ function Overview({
               </div>
               <div>
                 <h3 style={{ color: theme.textMain, margin: 0, fontSize: '18px', fontWeight: '800' }}>Key Insight</h3>
-                <span style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '700' }}>Rentang: {timeFilterLabel}</span>
+                <span style={{ fontSize: '11px', color: theme.textMuted, fontWeight: '700' }}>
+                  Rentang: {selectedDate ? selectedDate : timeFilterLabel}
+                </span>
               </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', flex: 1, justifyContent: 'center' }}>
-              {overviewApiData?.keyInsights && overviewApiData.keyInsights.length > 0 ? (
+              {overviewApiData?.keyInsights && overviewApiData.keyInsights.length > 0 && !selectedDate ? (
                 overviewApiData.keyInsights.slice(0, 3).map((insightItem, index) => (
                   <div key={index} style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
                     <div style={insightNumberBadgeStyle}>{index + 1}</div>
@@ -678,11 +730,17 @@ function Overview({
                     <div style={insightNumberBadgeStyle}>1</div>
                     <div>
                       <h4 style={{ margin: '0 0 2px 0', fontSize: '14px', fontWeight: '800', color: theme.textMain }}>
-                        Sentimen {dominantSentiment === 'negative' ? `negatif (${negativeShare}%)` : dominantSentiment === 'neutral' ? `netral (${neutralShare}%)` : `positif (${positiveShare}%)`} dominan
+                        Sentimen {activeDominantStats.dominant === 'negative' ? `negatif (${activeDominantStats.dominantShare}%)` : activeDominantStats.dominant === 'neutral' ? `netral (${activeDominantStats.dominantShare}%)` : `positif (${activeDominantStats.dominantShare}%)`} dominan
                       </h4>
                       <p style={{ margin: 0, fontSize: '12px', color: theme.textMuted, lineHeight: '1.4' }}>
                         {totalPosts > 0
-                          ? <>Puncak tren pada <strong>{peakDateStr !== '-' ? peakDateStr : timeFilterLabel}</strong> dipicu oleh diskusi seputar <strong>{activeDominantStats.dominantTopic || topPositiveTopic || DEFAULT_FALLBACK_TOPIC}</strong>.</>
+                          ? (
+                            selectedDate ? (
+                              <>Tren pada <strong>{selectedDate}</strong> dipicu oleh diskusi seputar <strong>{selectedDateTopic || activeDominantStats.dominantTopic || DEFAULT_FALLBACK_TOPIC}</strong>.</>
+                            ) : (
+                              <>Puncak tren pada <strong>{peakDateStr !== '-' ? peakDateStr : timeFilterLabel}</strong> dipicu oleh diskusi seputar <strong>{activeDominantStats.dominantTopic || topPositiveTopic || DEFAULT_FALLBACK_TOPIC}</strong>.</>
+                            )
+                          )
                           : 'Menunggu data percakapan dari database.'}
                       </p>
                     </div>
@@ -692,10 +750,10 @@ function Overview({
                     <div style={insightNumberBadgeStyle}>2</div>
                     <div>
                       <h4 style={{ margin: '0 0 2px 0', fontSize: '14px', fontWeight: '800', color: theme.textMain }}>
-                        {((activePlatformDistData.instagram.posts + activePlatformDistData.x.posts) || totalPosts).toLocaleString('id-ID')} Postingan Dianalisis
+                        {activePeriodPostsCount.toLocaleString('id-ID')} Postingan Dianalisis
                       </h4>
                       <p style={{ margin: 0, fontSize: '12px', color: theme.textMuted, lineHeight: '1.4' }}>
-                        Distribusi gabungan platform terdiri dari Instagram ({activePlatformDistData.instagram.percentage}% / {activePlatformDistData.instagram.posts.toLocaleString('id-ID')} posts) dan X ({activePlatformDistData.x.percentage}% / {activePlatformDistData.x.posts.toLocaleString('id-ID')} posts) pada {timeFilterLabel}.
+                        Distribusi gabungan platform terdiri dari Instagram ({activePlatformDistData.instagram.percentage}% / {activePlatformDistData.instagram.posts.toLocaleString('id-ID')} posts) dan X ({activePlatformDistData.x.percentage}% / {activePlatformDistData.x.posts.toLocaleString('id-ID')} posts) pada {selectedDate || timeFilterLabel}.
                       </p>
                     </div>
                   </div>
@@ -704,12 +762,12 @@ function Overview({
                     <div style={insightNumberBadgeStyle}>3</div>
                     <div>
                       <h4 style={{ margin: '0 0 2px 0', fontSize: '14px', fontWeight: '800', color: theme.textMain }}>
-                        Fokus isu negatif ({negativeCount.toLocaleString('id-ID')} posts)
+                        Fokus isu negatif ({activePeriodNegativeCount.toLocaleString('id-ID')} posts)
                       </h4>
                       <p style={{ margin: 0, fontSize: '12px', color: theme.textMuted, lineHeight: '1.4' }}>
-                        {negativeCount > 0
-                          ? <>Percakapan negatif pada {timeFilterLabel} berkisar pada topik <strong>{topNegativeTopic}</strong>.</>
-                          : `Tidak ditemukan lonjakan percakapan negatif pada ${timeFilterLabel}.`}
+                        {activePeriodNegativeCount > 0
+                          ? <>Percakapan negatif pada {selectedDate || timeFilterLabel} berkisar pada topik <strong>{activeNegativeTopic}</strong>.</>
+                          : `Tidak ditemukan lonjakan percakapan negatif pada ${selectedDate || timeFilterLabel}.`}
                       </p>
                     </div>
                   </div>
